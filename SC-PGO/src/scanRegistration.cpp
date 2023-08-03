@@ -202,9 +202,27 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr &laserCloudMsg)
             }
         }
         // Ouster OS1-64 (e.g., MulRan)
+        else if (LIDAR_TYPE == "OS0-128" && N_SCANS == 128)
+        {   
+            scanID = int((angle + 45) / 2 + 0.5); // ouster OS0-128 vfov is [-45, 45] see https://ouster.com/products/os1-lidar-sensor/
+            if (scanID > (N_SCANS - 1) || scanID < 0)
+            {
+                count--;
+                continue;
+            }
+        }
         else if (LIDAR_TYPE == "OS1-64" && N_SCANS == 64)
         {   
             scanID = int((angle + 22.5) / 2 + 0.5); // ouster os1-64 vfov is [-22.5, 22.5] see https://ouster.com/products/os1-lidar-sensor/
+            if (scanID > (N_SCANS - 1) || scanID < 0)
+            {
+                count--;
+                continue;
+            }
+        }
+        else if (LIDAR_TYPE == "OS2-128" && N_SCANS == 128) // ouster os2-128 vfov is [-11.25, 11.25] see https://ouster.com/products/os1-lidar-sensor/
+        {   
+            scanID = int((angle + 11.25) / 2 + 0.5);
             if (scanID > (N_SCANS - 1) || scanID < 0)
             {
                 count--;
@@ -414,7 +432,7 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr &laserCloudMsg)
         pcl::PointCloud<PointType> surfPointsLessFlatScanDS;
         pcl::VoxelGrid<PointType> downSizeFilter;
         downSizeFilter.setInputCloud(surfPointsLessFlatScan);
-        downSizeFilter.setLeafSize(0.2, 0.2, 0.2);
+        downSizeFilter.setLeafSize(0.3, 0.3, 0.3);
         downSizeFilter.filter(surfPointsLessFlatScanDS);
 
         surfPointsLessFlat += surfPointsLessFlatScanDS;
@@ -481,11 +499,11 @@ int main(int argc, char **argv)
     nh.param<std::string>("lidar_type", LIDAR_TYPE, "KITTI");
     nh.param<double>("minimum_range", MINIMUM_RANGE, 0.1);
 
-    //printf("scan line number %d \n", N_SCANS);
+    printf("scan line number %d \n", N_SCANS);
 
     if(N_SCANS != 16 && N_SCANS != 32 && N_SCANS != 64)
     {
-        //printf("only support velodyne with 16, 32 or 64 scan line!");
+        printf("only support velodyne with 16, 32 or 64 scan line!");
         return 0;
     }
 

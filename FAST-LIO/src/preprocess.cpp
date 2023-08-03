@@ -2,6 +2,7 @@
 
 #define RETURN0     0x00
 #define RETURN0AND1 0x10
+static constexpr double kHeightofCeilingMeter = 8.0;
 
 Preprocess::Preprocess()
   :feature_enabled(0), lidar_type(AVIA), blind(0.01), point_filter_num(1)
@@ -236,6 +237,7 @@ void Preprocess::oust64_handler(const sensor_msgs::PointCloud2::ConstPtr &msg)
       if (i % point_filter_num != 0) continue;
 
       double range = pl_orig.points[i].x * pl_orig.points[i].x + pl_orig.points[i].y * pl_orig.points[i].y + pl_orig.points[i].z * pl_orig.points[i].z;
+      if(pl_orig.points[i].z > kHeightofCeilingMeter) continue;
       
       if (range < blind) continue;
       

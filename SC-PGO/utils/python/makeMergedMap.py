@@ -25,8 +25,7 @@ color_table_len = color_table.shape[0]
 # User only consider this block
 ##########################
 
-data_dir = "/home/user/Documents/catkin2021/catkin_fastlio2/data/" # should end with / 
-scan_idx_range_to_stack = [0, 200] # if you want a whole map, use [0, len(scan_files)]
+data_dir = "/home/cyngn/github/catkin_fast_lio_slam/data_jd_tune1/" # should end with / 
 node_skip = 1
 
 num_points_in_a_scan = 150000 # for reservation (save faster) // e.g., use 150000 for 128 ray lidars, 100000 for 64 ray lidars, 30000 for 16 ray lidars, if error occured, use the larger value.
@@ -36,7 +35,7 @@ is_o3d_vis = True
 intensity_color_max = 200
 
 is_near_removal = True
-thres_near_removal = 2 # meter (to remove platform-myself structure ghost points)
+thres_near_removal = 1 # meter (to remove platform-myself structure ghost points)
 
 ##########################
 
@@ -45,6 +44,7 @@ thres_near_removal = 2 # meter (to remove platform-myself structure ghost points
 scan_dir = data_dir + "Scans"
 scan_files = os.listdir(scan_dir) 
 scan_files.sort()
+scan_idx_range_to_stack = [0, len(scan_files)] # if you want a whole map, use [0, len(scan_files)]
 
 poses = []
 f = open(data_dir+"optimized_poses.txt", 'r')
@@ -96,7 +96,7 @@ for node_idx in range(len(scan_files)):
     scan_path = os.path.join(scan_dir, scan_files[node_idx])
     scan_pcd = o3d.io.read_point_cloud(scan_path)
     scan_xyz_local = copy.deepcopy(np.asarray(scan_pcd.points))
-
+    # import pdb; pdb.set_trace()
     scan_pypcd_with_intensity = pypcd.PointCloud.from_path(scan_path)
     scan_intensity = scan_pypcd_with_intensity.pc_data['intensity']
     scan_intensity_colors_idx = np.round( (color_table_len-1) * np.minimum( 1, np.maximum(0, scan_intensity / intensity_color_max) ) )
@@ -152,8 +152,8 @@ xyzi.save_pcd(map_name, compression='binary_compressed')
 print("intensity map is save (path:", map_name, ")")
 
 # save rgb colored points 
-# map_name = data_dir + "map_" + str(scan_idx_range_to_stack[0]) + "_to_" + str(scan_idx_range_to_stack[1]) + ".pcd"
-# o3d.io.write_point_cloud(map_name, pcd_combined_for_vis)
-# print("the map is save (path:", map_name, ")")
+map_name = data_dir + "map_" + str(scan_idx_range_to_stack[0]) + "_to_" + str(scan_idx_range_to_stack[1]) + ".pcd"
+o3d.io.write_point_cloud(map_name, pcd_combined_for_vis)
+print("the map is save (path:", map_name, ")")
 
 

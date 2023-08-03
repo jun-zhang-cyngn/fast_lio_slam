@@ -620,6 +620,7 @@ void process_pg()
 
             // save utility 
             std::string curr_node_idx_str = padZeros(curr_node_idx);
+            std::cout << pgScansDirectory + curr_node_idx_str + ".pcd" << "\n";
             pcl::io::savePCDFileBinary(pgScansDirectory + curr_node_idx_str + ".pcd", *thisKeyFrame); // scan 
             pgTimeSaveStream << timeLaser << std::endl; // path 
         }
@@ -780,6 +781,8 @@ int main(int argc, char **argv)
     pgScansDirectory = save_directory + "Scans/";
     auto unused = system((std::string("exec rm -r ") + pgScansDirectory).c_str());
     unused = system((std::string("mkdir -p ") + pgScansDirectory).c_str());
+
+    std::cout << "pgScansDirectory ===== " << pgScansDirectory << "\n";
 
 	nh.param<double>("keyframe_meter_gap", keyframeMeterGap, 2.0); // pose assignment every k m move 
 	nh.param<double>("keyframe_deg_gap", keyframeDegGap, 10.0); // pose assignment every k deg rot 
