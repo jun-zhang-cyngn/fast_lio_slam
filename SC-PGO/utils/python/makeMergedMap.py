@@ -3,6 +3,7 @@ import sys
 import time 
 import copy 
 from io import StringIO
+from scipy.spatial.transform import Rotation as R
 
 import pypcd # for the install, use this command: python3.x (use your python ver) -m pip install --user git+https://github.com/DanielPollithy/pypcd.git
 from pypcd import pypcd
@@ -25,7 +26,7 @@ color_table_len = color_table.shape[0]
 # User only consider this block
 ##########################
 
-data_dir = "/home/cyngn/github/catkin_fast_lio_slam/data_jd_tune1/" # should end with / 
+data_dir = "/home/cyngn/github/catkin_fast_lio_slam/data_jd_tune_no_roof_gicp_gnc/" # should end with / 
 node_skip = 1
 
 num_points_in_a_scan = 150000 # for reservation (save faster) // e.g., use 150000 for 128 ray lidars, 100000 for 64 ray lidars, 30000 for 16 ray lidars, if error occured, use the larger value.
@@ -40,29 +41,61 @@ thres_near_removal = 1 # meter (to remove platform-myself structure ghost points
 ##########################
 
 
-#
+def load_json_hba_json_pose(data_dir):
+    f = open(data_dir+ "/pose.json", 'r')
+    poses = []
+    while True:
+        line = f.readline()
+        if not line: break
+        tx, ty, tz, qw, qx, qy, qz = [float(i) for i in line.split()]
+        pose_SE3 = np.identity(4)
+        # import pdb; pdb.set_trace()
+        pose_SE3[0:3,0:3] = R.from_quat([qx, qy, qz, qw]).as_matrix()
+        pose_SE3[:, -1][0] = tx
+        pose_SE3[:, -1][1] = ty
+        pose_SE3[:, -1][2] = tz
+        poses.append(pose_SE3)
+        # import pdb; pdb.set_trace()
+    f.close()
+    return poses
+
+
+def load_fasfio_slam_pose(data_dir, fname):
+    f = open(data_dir+ "/" + fname, 'r')
+    poses = []
+    while True:
+        line = f.readline()
+        if not line: break
+        pose_SE3 = np.asarray([float(i) for i in line.split()])
+        pose_SE3 = np.vstack( (np.reshape(pose_SE3, (3, 4)), np.asarray([0,0,0,1])) )
+        poses.append(pose_SE3)
+    f.close()
+    return poses
+
+def covert_fastfio2_to_hba_poses(fastfio_poses, data_dir):
+    poses_vector7 = []
+    for pose_SE3 in fastfio_poses:
+        dcm_so3 = pose_SE3[0:3,0:3]
+        tx, ty, tz = pose_SE3[:, -1][0:3].tolist()
+        scipy_r = R.from_matrix(dcm_so3)
+        qx, qy, qz, qw = scipy_r.as_quat() # x, y, z, w
+        poses_vector7.append(np.array([tx, ty, tz, qw, qx, qy, qz]))
+    poses_vector7 = np.array(poses_vector7)
+    np.savetxt(data_dir+"/odom_pose.json", poses_vector7, delimiter=" ")
+    return poses_vector7
+
 scan_dir = data_dir + "Scans"
 scan_files = os.listdir(scan_dir) 
 scan_files.sort()
 scan_idx_range_to_stack = [0, len(scan_files)] # if you want a whole map, use [0, len(scan_files)]
 
-poses = []
-f = open(data_dir+"optimized_poses.txt", 'r')
-while True:
-    line = f.readline()
-    if not line: break
-    pose_SE3 = np.asarray([float(i) for i in line.split()])
-    pose_SE3 = np.vstack( (np.reshape(pose_SE3, (3, 4)), np.asarray([0,0,0,1])) )
-    poses.append(pose_SE3)
-f.close()
-
-
-#
+poses = load_json_hba_json_pose('/home/cyngn/github/catkin_ws_hba/data/JD_123/')
+# poses = load_fasfio_slam_pose('/home/cyngn/github/catkin_fast_lio_slam/data_jd_tune_no_roof_gicp_gnc/', 'odom_poses.txt')
+# covert_fastfio2_to_hba_poses(poses, '/home/cyngn/github/catkin_fast_lio_slam/data_jd_tune_no_roof_gicp_gnc/')
 assert (scan_idx_range_to_stack[1] > scan_idx_range_to_stack[0])
 print("Merging scans from", scan_idx_range_to_stack[0], "to", scan_idx_range_to_stack[1])
 
 
-#
 if(is_live_vis):
     vis = o3d.visualization.Visualizer() 
     vis.create_window('Map', visible = True) 

@@ -7,7 +7,7 @@
 #include <iostream>
 #include <string>
 #include <optional>
-
+#include <pcl/registration/gicp.h>
 #include <pcl/point_cloud.h>
 #include <pcl/point_types.h>
 #include <pcl/search/impl/search.hpp>
@@ -51,11 +51,15 @@
 #include <gtsam/nonlinear/NonlinearFactorGraph.h>
 #include <gtsam/nonlinear/LevenbergMarquardtOptimizer.h>
 #include <gtsam/nonlinear/ISAM2.h>
+#include <gtsam/nonlinear/GncOptimizer.h>
 
 #include "aloam_velodyne/common.h"
 #include "aloam_velodyne/tic_toc.h"
 
 #include "scancontext/Scancontext.h"
+
+#include <signal.h>
+
 
 using namespace gtsam;
 
@@ -98,8 +102,14 @@ gtsam::Values initialEstimate;
 gtsam::ISAM2 *isam;
 gtsam::Values isamCurrentEstimate;
 
+// GNC based gtsam 
+gtsam::NonlinearFactorGraph gnc_graph;
+gtsam::Values gnc_initial_estimate;
+
 noiseModel::Diagonal::shared_ptr priorNoise;
 noiseModel::Diagonal::shared_ptr odomNoise;
+noiseModel::Diagonal::shared_ptr nonrobustLoopNoise;
+
 noiseModel::Base::shared_ptr robustLoopNoise;
 noiseModel::Base::shared_ptr robustGPSNoise;
 
@@ -132,6 +142,8 @@ ros::Publisher pubOdomRepubVerifier;
 std::string save_directory;
 std::string pgKITTIformat, pgScansDirectory;
 std::string odomKITTIformat;
+std::string pgKITTIformatGnc;
+
 std::fstream pgTimeSaveStream;
 
 std::string padZeros(int val, int num_digits = 6) {
@@ -225,6 +237,8 @@ void initNoises( void )
     double loopNoiseScore = 0.5; // constant is ok...
     gtsam::Vector robustNoiseVector6(6); // gtsam::Pose3 factor has 6 elements (6D)
     robustNoiseVector6 << loopNoiseScore, loopNoiseScore, loopNoiseScore, loopNoiseScore, loopNoiseScore, loopNoiseScore;
+    nonrobustLoopNoise = noiseModel::Diagonal::Variances(robustNoiseVector6);
+
     robustLoopNoise = gtsam::noiseModel::Robust::Create(
                     gtsam::noiseModel::mEstimator::Cauchy::Create(1), // optional: replacing Cauchy by DCS or GemanMcClure is okay but Cauchy is empirically good.
                     gtsam::noiseModel::Diagonal::Variances(robustNoiseVector6) );
@@ -445,13 +459,15 @@ std::optional<gtsam::Pose3> doICPVirtualRelative( int _loop_kf_idx, int _curr_kf
     pubLoopSubmapLocal.publish(targetKeyframeCloudMsg);
 
     // ICP Settings
-    pcl::IterativeClosestPoint<PointType, PointType> icp;
-    icp.setMaxCorrespondenceDistance(150); // giseop , use a value can cover 2*historyKeyframeSearchNum range in meter 
-    icp.setMaximumIterations(100);
-    icp.setTransformationEpsilon(1e-6);
-    icp.setEuclideanFitnessEpsilon(1e-6);
-    icp.setRANSACIterations(0);
+    // pcl::IterativeClosestPoint<PointType, PointType> icp;
 
+    // icp.setMaxCorrespondenceDistance(150); // giseop , use a value can cover 2*historyKeyframeSearchNum range in meter 
+    // icp.setMaximumIterations(100);
+    // icp.setTransformationEpsilon(1e-6);
+    // icp.setEuclideanFitnessEpsilon(1e-6);
+    // icp.setRANSACIterations(0);
+
+    pcl::GeneralizedIterativeClosestPoint<PointType, PointType> icp;
     // Align pointclouds
     icp.setInputSource(cureKeyframeCloud);
     icp.setInputTarget(targetKeyframeCloud);
@@ -583,6 +599,11 @@ void process_pg()
                     // prior factor 
                     gtSAMgraph.add(gtsam::PriorFactor<gtsam::Pose3>(init_node_idx, poseOrigin, priorNoise));
                     initialEstimate.insert(init_node_idx, poseOrigin);
+                    // GNC graph
+                    {
+                        gnc_graph.add(gtsam::PriorFactor<gtsam::Pose3>(init_node_idx, poseOrigin, priorNoise));
+                        gnc_initial_estimate.insert(init_node_idx, poseOrigin);
+                    }
                     // runISAM2opt();          
                 }   
                 mtxPosegraph.unlock();
@@ -598,6 +619,7 @@ void process_pg()
                 {
                     // odom factor
                     gtSAMgraph.add(gtsam::BetweenFactor<gtsam::Pose3>(prev_node_idx, curr_node_idx, poseFrom.between(poseTo), odomNoise));
+                    gnc_graph.add(gtsam::BetweenFactor<gtsam::Pose3>(prev_node_idx, curr_node_idx, poseFrom.between(poseTo), odomNoise));
 
                     // gps factor 
                     if(hasGPSforThisKF) {
@@ -608,7 +630,9 @@ void process_pg()
                         gtSAMgraph.add(gtsam::GPSFactor(curr_node_idx, gpsConstraint, robustGPSNoise));
                         cout << "GPS factor added at node " << curr_node_idx << endl;
                     }
-                    initialEstimate.insert(curr_node_idx, poseTo);                
+                    initialEstimate.insert(curr_node_idx, poseTo);  
+                    gnc_initial_estimate.insert(curr_node_idx, poseTo);  
+                                  
                     // runISAM2opt();
                 }
                 mtxPosegraph.unlock();
@@ -673,7 +697,7 @@ void process_icp(void)
 		while ( !scLoopICPBuf.empty() )
         {
             if( scLoopICPBuf.size() > 30 ) {
-                ROS_WARN("Too many loop clousre candidates to be ICPed is waiting ... Do process_lcd less frequently (adjust loopClosureFrequency)");
+                ROS_WARN("Too many loop clousre candidates [%d] to be ICPed is waiting ... Do process_lcd less frequently (adjust loopClosureFrequency)", scLoopICPBuf.size());
             }
 
             mBuf.lock(); 
@@ -688,6 +712,8 @@ void process_icp(void)
                 gtsam::Pose3 relative_pose = relative_pose_optional.value();
                 mtxPosegraph.lock();
                 gtSAMgraph.add(gtsam::BetweenFactor<gtsam::Pose3>(prev_node_idx, curr_node_idx, relative_pose, robustLoopNoise));
+                gnc_graph.add(gtsam::BetweenFactor<gtsam::Pose3>(prev_node_idx, curr_node_idx, relative_pose, nonrobustLoopNoise));
+                
                 // runISAM2opt();
                 mtxPosegraph.unlock();
             } 
@@ -775,14 +801,14 @@ int main(int argc, char **argv)
 
 	nh.param<std::string>("save_directory", save_directory, "/"); // pose assignment every k m move 
     pgKITTIformat = save_directory + "optimized_poses.txt";
+    pgKITTIformatGnc = save_directory + "optimized_poses_gnc.txt";
     odomKITTIformat = save_directory + "odom_poses.txt";
+
     pgTimeSaveStream = std::fstream(save_directory + "times.txt", std::fstream::out); 
     pgTimeSaveStream.precision(std::numeric_limits<double>::max_digits10);
     pgScansDirectory = save_directory + "Scans/";
     auto unused = system((std::string("exec rm -r ") + pgScansDirectory).c_str());
     unused = system((std::string("mkdir -p ") + pgScansDirectory).c_str());
-
-    std::cout << "pgScansDirectory ===== " << pgScansDirectory << "\n";
 
 	nh.param<double>("keyframe_meter_gap", keyframeMeterGap, 2.0); // pose assignment every k m move 
 	nh.param<double>("keyframe_deg_gap", keyframeDegGap, 10.0); // pose assignment every k deg rot 
@@ -800,7 +826,7 @@ int main(int argc, char **argv)
     scManager.setSCdistThres(scDistThres);
     scManager.setMaximumRadius(scMaximumRadius);
 
-    float filter_size = 0.4; 
+    float filter_size = 0.2; 
     downSizeFilterScancontext.setLeafSize(filter_size, filter_size, filter_size);
     downSizeFilterICP.setLeafSize(filter_size, filter_size, filter_size);
 
@@ -829,6 +855,19 @@ int main(int argc, char **argv)
 	std::thread viz_path {process_viz_path}; // visualization - path (high frequency)
 
  	ros::spin();
+
+    cout << "Running the GNC... \n";
+    {
+        auto opt_start_time = std::chrono::steady_clock::now();
+        GncParams<LevenbergMarquardtParams> gncParams;
+        auto gnc = GncOptimizer< GncParams<LevenbergMarquardtParams> >(gnc_graph, gnc_initial_estimate, gncParams);
+        Values gnc_results = gnc.optimize();
+        auto now = std::chrono::steady_clock::now();
+        auto gnc_delay_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - opt_start_time).count();
+        cout << "gnc delay is " << gnc_delay_ms / 1000 << " seconds \n";
+        cout << "GNC done, saving results...\n";
+        saveOptimizedVerticesKITTIformat(gnc_results, pgKITTIformatGnc);
+    }
 
 	return 0;
 }
