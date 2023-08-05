@@ -6,6 +6,9 @@
 #include <thread>
 #include <iostream>
 #include <string>
+#include <unordered_set>
+ #include <cstdint>
+
 #include <optional>
 #include <pcl/registration/gicp.h>
 #include <pcl/point_cloud.h>
@@ -81,6 +84,10 @@ std::queue<sensor_msgs::PointCloud2ConstPtr> fullResBuf;
 std::queue<sensor_msgs::NavSatFix::ConstPtr> gpsBuf;
 std::queue<std::pair<int, int> > scLoopICPBuf;
 
+std::unordered_set<std::string> seen_icp_pair;
+std::chrono::high_resolution_clock::time_point graph_update_time = std::chrono::high_resolution_clock::now();
+
+
 std::mutex mBuf;
 std::mutex mKF;
 
@@ -150,6 +157,14 @@ std::string padZeros(int val, int num_digits = 6) {
   std::ostringstream out;
   out << std::internal << std::setfill('0') << std::setw(num_digits) << val;
   return out.str();
+}
+
+int32_t GetDelaySinceGraphUpdateinSeconds() {
+    auto now = std::chrono::high_resolution_clock::now();
+    mtxPosegraph.lock();
+    auto delay_s = std::chrono::duration_cast<std::chrono::seconds>(now - graph_update_time).count();
+    mtxPosegraph.unlock();
+    return delay_s;
 }
 
 gtsam::Pose3 Pose6DtoGTSAMPose3(const Pose6D& p)
@@ -288,7 +303,7 @@ pcl::PointCloud<PointType>::Ptr local2global(const pcl::PointCloud<PointType>::P
 
     Eigen::Affine3f transCur = pcl::getTransformation(tf.x, tf.y, tf.z, tf.roll, tf.pitch, tf.yaw);
     
-    int numberOfCores = 16;
+    int numberOfCores = 32;
     #pragma omp parallel for num_threads(numberOfCores)
     for (int i = 0; i < cloudSize; ++i)
     {
@@ -476,7 +491,9 @@ std::optional<gtsam::Pose3> doICPVirtualRelative( int _loop_kf_idx, int _curr_kf
  
     float loopFitnessScoreThreshold = 0.3; // user parameter but fixed low value is safe. 
     if (icp.hasConverged() == false || icp.getFitnessScore() > loopFitnessScoreThreshold) {
-        std::cout << "[SC loop] ICP fitness test failed (" << icp.getFitnessScore() << " > " << loopFitnessScoreThreshold << "). Reject this SC loop." << std::endl;
+        std::cout << "[SC loop] ICP fitness test failed (" << icp.getFitnessScore() << " > " 
+                  << loopFitnessScoreThreshold << "). Reject this SC loop." 
+                  << std::endl;
         return std::nullopt;
     } else {
         std::cout << "[SC loop] ICP fitness test passed (" << icp.getFitnessScore() << " < " << loopFitnessScoreThreshold << "). Add this SC loop." << std::endl;
@@ -617,6 +634,7 @@ void process_pg()
 
                 mtxPosegraph.lock();
                 {
+                    cout << "adding odo factor: from " << prev_node_idx << " -> " << curr_node_idx << "\n";
                     // odom factor
                     gtSAMgraph.add(gtsam::BetweenFactor<gtsam::Pose3>(prev_node_idx, curr_node_idx, poseFrom.between(poseTo), odomNoise));
                     gnc_graph.add(gtsam::BetweenFactor<gtsam::Pose3>(prev_node_idx, curr_node_idx, poseFrom.between(poseTo), odomNoise));
@@ -632,9 +650,9 @@ void process_pg()
                     }
                     initialEstimate.insert(curr_node_idx, poseTo);  
                     gnc_initial_estimate.insert(curr_node_idx, poseTo);  
-                                  
                     // runISAM2opt();
                 }
+                graph_update_time = std::chrono::high_resolution_clock::now();
                 mtxPosegraph.unlock();
 
                 if(curr_node_idx % 100 == 0)
@@ -669,12 +687,16 @@ void performSCLoopClosure(void)
     if( SCclosestHistoryFrameID != -1 ) { 
         const int prev_node_idx = SCclosestHistoryFrameID;
         const int curr_node_idx = keyframePoses.size() - 1; // because cpp starts 0 and ends n-1
-        cout << "Loop detected! - between " << prev_node_idx << " and " << curr_node_idx << "" << endl;
+        std::string lcd_key = std::to_string(prev_node_idx) + "-" +  std::to_string(curr_node_idx);
+        if(seen_icp_pair.count(lcd_key) == 0) {
+            cout << "Loop detected! - between " << prev_node_idx << " and " << curr_node_idx << "" << endl;
 
-        mBuf.lock();
-        scLoopICPBuf.push(std::pair<int, int>(prev_node_idx, curr_node_idx));
-        // addding actual 6D constraints in the other thread, icp_calculation.
-        mBuf.unlock();
+            mBuf.lock();
+            scLoopICPBuf.push(std::pair<int, int>(prev_node_idx, curr_node_idx));
+            // addding actual 6D constraints in the other thread, icp_calculation.
+            mBuf.unlock();
+            seen_icp_pair.insert(lcd_key);
+        }
     }
 } // performSCLoopClosure
 
@@ -697,7 +719,7 @@ void process_icp(void)
 		while ( !scLoopICPBuf.empty() )
         {
             if( scLoopICPBuf.size() > 30 ) {
-                ROS_WARN("Too many loop clousre candidates [%d] to be ICPed is waiting ... Do process_lcd less frequently (adjust loopClosureFrequency)", scLoopICPBuf.size());
+                ROS_WARN("Too many loop clousre candidates [%d] to be ICPed is waiting ... adjust loopClosureFrequency", (int)scLoopICPBuf.size());
             }
 
             mBuf.lock(); 
@@ -714,6 +736,8 @@ void process_icp(void)
                 gtSAMgraph.add(gtsam::BetweenFactor<gtsam::Pose3>(prev_node_idx, curr_node_idx, relative_pose, robustLoopNoise));
                 gnc_graph.add(gtsam::BetweenFactor<gtsam::Pose3>(prev_node_idx, curr_node_idx, relative_pose, nonrobustLoopNoise));
                 
+                graph_update_time = std::chrono::high_resolution_clock::now();
+                cout << "adding btn factor: from " << prev_node_idx << " -> " << curr_node_idx << "\n";
                 // runISAM2opt();
                 mtxPosegraph.unlock();
             } 
@@ -737,13 +761,36 @@ void process_viz_path(void)
     }
 }
 
+void process_gnc(void) {
+    cout << "Running the GNC... \n";    
+    auto opt_start_time = std::chrono::steady_clock::now();
+    GncParams<LevenbergMarquardtParams> gncParams;
+    
+    mtxPosegraph.lock();
+    auto gnc = GncOptimizer< GncParams<LevenbergMarquardtParams> >(gnc_graph, gnc_initial_estimate, gncParams);
+    Values gnc_results = gnc.optimize();
+    mtxPosegraph.unlock();
+
+    auto now = std::chrono::steady_clock::now();
+    auto gnc_delay_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - opt_start_time).count();
+    cout << "gnc delay is " << gnc_delay_ms / 1000 << " seconds \n";
+    cout << "GNC done, saving results...\n";
+    saveOptimizedVerticesKITTIformat(gnc_results, pgKITTIformatGnc);
+};
+
 void process_isam(void)
 {
     float hz = 1; 
     ros::Rate rate(hz);
     while (ros::ok()) {
         rate.sleep();
-        if( gtSAMgraphMade ) {
+        if(gtSAMgraphMade && GetDelaySinceGraphUpdateinSeconds() > 60) {
+            cout << "no updte on graph for " << GetDelaySinceGraphUpdateinSeconds() << "...\n";
+            process_gnc();
+            cout << "exiting the gtsam task\n";
+            return;
+        }
+        else if( gtSAMgraphMade ) {
             mtxPosegraph.lock();
             runISAM2opt();
             cout << "running isam2 optimization ..." << endl;
@@ -855,19 +902,5 @@ int main(int argc, char **argv)
 	std::thread viz_path {process_viz_path}; // visualization - path (high frequency)
 
  	ros::spin();
-
-    cout << "Running the GNC... \n";
-    {
-        auto opt_start_time = std::chrono::steady_clock::now();
-        GncParams<LevenbergMarquardtParams> gncParams;
-        auto gnc = GncOptimizer< GncParams<LevenbergMarquardtParams> >(gnc_graph, gnc_initial_estimate, gncParams);
-        Values gnc_results = gnc.optimize();
-        auto now = std::chrono::steady_clock::now();
-        auto gnc_delay_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - opt_start_time).count();
-        cout << "gnc delay is " << gnc_delay_ms / 1000 << " seconds \n";
-        cout << "GNC done, saving results...\n";
-        saveOptimizedVerticesKITTIformat(gnc_results, pgKITTIformatGnc);
-    }
-
 	return 0;
 }
