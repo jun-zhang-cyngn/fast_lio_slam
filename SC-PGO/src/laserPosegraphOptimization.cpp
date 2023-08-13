@@ -489,7 +489,7 @@ std::optional<gtsam::Pose3> doICPVirtualRelative( int _loop_kf_idx, int _curr_kf
     pcl::PointCloud<PointType>::Ptr unused_result(new pcl::PointCloud<PointType>());
     icp.align(*unused_result);
  
-    float loopFitnessScoreThreshold = 0.3; // user parameter but fixed low value is safe. 
+    float loopFitnessScoreThreshold = 0.2; // user parameter but fixed low value is safe. 
     if (icp.hasConverged() == false || icp.getFitnessScore() > loopFitnessScoreThreshold) {
         std::cout << "[SC loop] ICP fitness test failed (" << icp.getFitnessScore() << " > " 
                   << loopFitnessScoreThreshold << "). Reject this SC loop." 
@@ -665,6 +665,7 @@ void process_pg()
             std::cout << pgScansDirectory + curr_node_idx_str + ".pcd" << "\n";
             pcl::io::savePCDFileBinary(pgScansDirectory + curr_node_idx_str + ".pcd", *thisKeyFrame); // scan 
             pgTimeSaveStream << timeLaser << std::endl; // path 
+            pgTimeSaveStream.flush();
         }
 
         // ps. 
@@ -784,7 +785,7 @@ void process_isam(void)
     ros::Rate rate(hz);
     while (ros::ok()) {
         rate.sleep();
-        if(gtSAMgraphMade && GetDelaySinceGraphUpdateinSeconds() > 60) {
+        if(gtSAMgraphMade && GetDelaySinceGraphUpdateinSeconds() > 120) {
             cout << "no updte on graph for " << GetDelaySinceGraphUpdateinSeconds() << "...\n";
             process_gnc();
             cout << "exiting the gtsam task\n";
@@ -853,7 +854,7 @@ int main(int argc, char **argv)
 
     pgTimeSaveStream = std::fstream(save_directory + "times.txt", std::fstream::out); 
     pgTimeSaveStream.precision(std::numeric_limits<double>::max_digits10);
-    pgScansDirectory = save_directory + "Scans/";
+    pgScansDirectory = save_directory + "pcd/";
     auto unused = system((std::string("exec rm -r ") + pgScansDirectory).c_str());
     unused = system((std::string("mkdir -p ") + pgScansDirectory).c_str());
 
@@ -902,5 +903,10 @@ int main(int argc, char **argv)
 	std::thread viz_path {process_viz_path}; // visualization - path (high frequency)
 
  	ros::spin();
+
+    pgTimeSaveStream.flush();
+    pgTimeSaveStream.close();
+
+
 	return 0;
 }

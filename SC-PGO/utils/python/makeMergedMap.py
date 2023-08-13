@@ -26,13 +26,13 @@ color_table_len = color_table.shape[0]
 # User only consider this block
 ##########################
 
-data_dir = "/home/cyngn/github/catkin_fast_lio_slam/data_jd_tune_no_roof_gicp_gnc/" # should end with / 
+data_dir = "/home/ubuntu/github/catkin_fastlio/data/2023-07-25-21-05-17_0811/" # should end with / 
 node_skip = 1
 
 num_points_in_a_scan = 150000 # for reservation (save faster) // e.g., use 150000 for 128 ray lidars, 100000 for 64 ray lidars, 30000 for 16 ray lidars, if error occured, use the larger value.
 
 is_live_vis = False # recommend to use false 
-is_o3d_vis = True
+is_o3d_vis = False
 intensity_color_max = 200
 
 is_near_removal = True
@@ -72,7 +72,7 @@ def load_fasfio_slam_pose(data_dir, fname):
     f.close()
     return poses
 
-def covert_fastfio2_to_hba_poses(fastfio_poses, data_dir):
+def covert_fastfio2_to_hba_poses(fastfio_poses, json_pose_path):
     poses_vector7 = []
     for pose_SE3 in fastfio_poses:
         dcm_so3 = pose_SE3[0:3,0:3]
@@ -81,17 +81,25 @@ def covert_fastfio2_to_hba_poses(fastfio_poses, data_dir):
         qx, qy, qz, qw = scipy_r.as_quat() # x, y, z, w
         poses_vector7.append(np.array([tx, ty, tz, qw, qx, qy, qz]))
     poses_vector7 = np.array(poses_vector7)
-    np.savetxt(data_dir+"/odom_pose.json", poses_vector7, delimiter=" ")
+    np.savetxt(json_pose_path, poses_vector7, delimiter=" ")
     return poses_vector7
 
-scan_dir = data_dir + "Scans"
+scan_dir = data_dir + "/pcd"
 scan_files = os.listdir(scan_dir) 
 scan_files.sort()
 scan_idx_range_to_stack = [0, len(scan_files)] # if you want a whole map, use [0, len(scan_files)]
 
-poses = load_json_hba_json_pose('/home/cyngn/github/catkin_ws_hba/data/JD_123/')
-# poses = load_fasfio_slam_pose('/home/cyngn/github/catkin_fast_lio_slam/data_jd_tune_no_roof_gicp_gnc/', 'odom_poses.txt')
-# covert_fastfio2_to_hba_poses(poses, '/home/cyngn/github/catkin_fast_lio_slam/data_jd_tune_no_roof_gicp_gnc/')
+# poses = load_json_hba_json_pose(data_dir)
+
+poses = load_fasfio_slam_pose(data_dir, 'odom_poses.txt')
+covert_fastfio2_to_hba_poses(poses, data_dir + '/odom_pose.json')
+poses = load_fasfio_slam_pose(data_dir, 'optimized_poses.txt')
+covert_fastfio2_to_hba_poses(poses, data_dir + '/optimized_poses.json')
+poses = load_fasfio_slam_pose(data_dir, 'optimized_poses_gnc.txt')
+covert_fastfio2_to_hba_poses(poses, data_dir + '/optimized_poses_gnc.json')
+
+import pdb; pdb.set_trace()
+
 assert (scan_idx_range_to_stack[1] > scan_idx_range_to_stack[0])
 print("Merging scans from", scan_idx_range_to_stack[0], "to", scan_idx_range_to_stack[1])
 
@@ -127,6 +135,7 @@ for node_idx in range(len(scan_files)):
     scan_pose = poses[node_idx]
 
     scan_path = os.path.join(scan_dir, scan_files[node_idx])
+    # import pdb; pdb.set_trace()
     scan_pcd = o3d.io.read_point_cloud(scan_path)
     scan_xyz_local = copy.deepcopy(np.asarray(scan_pcd.points))
     # import pdb; pdb.set_trace()
