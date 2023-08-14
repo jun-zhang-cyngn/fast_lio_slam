@@ -37,10 +37,53 @@
 #pragma once
 
 #include <cmath>
+#include <iostream>
 
+#include <pcl/point_cloud.h>
 #include <pcl/point_types.h>
 
+namespace pcl {
+struct PointXYZITR {
+  PCL_ADD_POINT4D;
+  float intensity;
+  uint32_t timestamp;
+  uint16_t ring;  /// laser ring number
+  EIGEN_MAKE_ALIGNED_OPERATOR_NEW  // make sure our new allocators are aligned
+} EIGEN_ALIGN16;
+}
+
+
+POINT_CLOUD_REGISTER_POINT_STRUCT(pcl::PointXYZITR,
+                                  (float, x, x)(float, y, y)(float, z, z)(float, intensity, intensity)(double, timestamp, timestamp)(uint16_t, ring, ring));
+
+
 typedef pcl::PointXYZI PointType;
+// typedef pcl::PointXYZITR PointType;
+
+pcl::PointXYZITR convert_pointxyzi(pcl::PointXYZI &pt) {
+  pcl::PointXYZITR pt2;
+  pt2.x = pt.x;
+  pt2.y = pt.y;
+  pt2.z = pt.z;
+  uint32_t data = pt.intensity;
+  pt2.intensity = (data >> 16);
+  pt2.ring = (data & 0xFFFF);
+  pt2.timestamp = 0;
+  // std::cout << "i = " << pt2.intensity << " ring = " << pt2.ring << "\n";
+
+  pt.intensity = pt2.intensity;
+  return pt2;
+}
+void convert_pointxyzi_cloud(pcl::PointCloud<pcl::PointXYZI>::Ptr &pc_in,  
+  pcl::PointCloud<pcl::PointXYZITR>::Ptr &pc_out) {
+  pc_out->points.clear();
+  for(auto &pt : pc_in->points) {
+    pc_out->points.push_back(convert_pointxyzi(pt));
+  }
+  pc_out->width = 1;
+  pc_out->height = pc_out->points.size();
+}
+
 
 inline double rad2deg(double radians)
 {

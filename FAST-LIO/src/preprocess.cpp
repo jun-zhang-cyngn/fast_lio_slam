@@ -246,7 +246,9 @@ void Preprocess::oust64_handler(const sensor_msgs::PointCloud2::ConstPtr &msg)
       added_pt.x = pl_orig.points[i].x;
       added_pt.y = pl_orig.points[i].y;
       added_pt.z = pl_orig.points[i].z;
-      added_pt.intensity = pl_orig.points[i].intensity;
+      uint16_t intensity = pl_orig.points[i].intensity;
+      uint16_t ring = pl_orig.points[i].ring;
+      added_pt.intensity = (intensity << 16) | ring;
       added_pt.normal_x = 0;
       added_pt.normal_y = 0;
       added_pt.normal_z = 0;
