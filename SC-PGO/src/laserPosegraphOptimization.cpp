@@ -88,7 +88,7 @@ std::queue<std::pair<int, int> > scLoopICPBuf;
 std::unordered_set<std::string> seen_icp_pair;
 std::chrono::high_resolution_clock::time_point graph_update_time = std::chrono::high_resolution_clock::now();
 
-std::atomic<bool> exit_fastlio_slam = false;
+std::atomic<bool> exit_mapping_pgo = false;
 
 std::mutex mBuf;
 std::mutex mKF;
@@ -514,7 +514,7 @@ std::optional<gtsam::Pose3> doICPVirtualRelative( int _loop_kf_idx, int _curr_kf
 
 void process_pg()
 {
-    while(!exit_fastlio_slam)
+    while(!exit_mapping_pgo)
     {
 		while ( !odometryBuf.empty() && !fullResBuf.empty() )
         {
@@ -663,13 +663,14 @@ void process_pg()
             // if want to print the current graph, use gtSAMgraph.print("\nFactor Graph:\n");
 
             // save utility 
+            pgTimeSaveStream << timeLaser << std::endl; // path 
+            pgTimeSaveStream.flush();
+
             std::string curr_node_idx_str = padZeros(curr_node_idx);
             pcl::PointCloud<pcl::PointXYZITR>::Ptr thisKeyFrame2(new pcl::PointCloud<pcl::PointXYZITR>());
             convert_pointxyzi_cloud(thisKeyFrame, thisKeyFrame2);
             pcl::io::savePCDFileBinary(pgXYZTIRScansDirectory + curr_node_idx_str + ".pcd", *thisKeyFrame2); // scan 
             pcl::io::savePCDFileBinary(pgScansDirectory + curr_node_idx_str + ".pcd", *thisKeyFrame); // scan 
-            pgTimeSaveStream << timeLaser << std::endl; // path 
-            pgTimeSaveStream.flush();
         }
 
         // ps. 
@@ -709,7 +710,7 @@ void process_lcd(void)
 {
     float loopClosureFrequency = 1.0; // can change 
     ros::Rate rate(loopClosureFrequency);
-    while (ros::ok() && !exit_fastlio_slam)
+    while (ros::ok() && !exit_mapping_pgo)
     {
         rate.sleep();
         performSCLoopClosure();
@@ -719,11 +720,11 @@ void process_lcd(void)
 
 void process_icp(void)
 {
-    while(!exit_fastlio_slam)
+    while(!exit_mapping_pgo)
     {
 		while ( !scLoopICPBuf.empty() )
         {
-            if( scLoopICPBuf.size() > 30 ) {
+            if( scLoopICPBuf.size() > 10 ) {
                 ROS_WARN("Too many loop clousre candidates [%d] to be ICPed is waiting ... adjust loopClosureFrequency", (int)scLoopICPBuf.size());
             }
 
@@ -758,7 +759,7 @@ void process_viz_path(void)
 {
     float hz = 10.0; 
     ros::Rate rate(hz);
-    while (ros::ok()) {
+    while (ros::ok() && !exit_mapping_pgo) {
         rate.sleep();
         if(recentIdxUpdated > 1) {
             pubPath();
@@ -767,6 +768,9 @@ void process_viz_path(void)
 }
 
 void process_gnc(void) {
+    // tell other threads to stop
+    exit_mapping_pgo = true;
+
     cout << "Running the GNC... \n";    
     auto opt_start_time = std::chrono::steady_clock::now();
     GncParams<LevenbergMarquardtParams> gncParams;
@@ -781,15 +785,13 @@ void process_gnc(void) {
     cout << "gnc delay is " << gnc_delay_ms / 1000 << " seconds \n";
     cout << "GNC done, saving results...\n";
     saveOptimizedVerticesKITTIformat(gnc_results, pgKITTIformatGnc);
-
-    exit_fastlio_slam = true;
 };
 
 void process_isam(void)
 {
     float hz = 1; 
     ros::Rate rate(hz);
-    while (ros::ok() && !exit_fastlio_slam) {
+    while (ros::ok() && !exit_mapping_pgo) {
         rate.sleep();
         if(gtSAMgraphMade && GetDelaySinceGraphUpdateinSeconds() > 120) {
             cout << "no updte on graph for " << GetDelaySinceGraphUpdateinSeconds() << "...\n";
@@ -860,6 +862,7 @@ int main(int argc, char **argv)
 
     pgTimeSaveStream = std::fstream(save_directory + "times.txt", std::fstream::out); 
     pgTimeSaveStream.precision(std::numeric_limits<double>::max_digits10);
+
     pgScansDirectory = save_directory + "pcd/";
     pgXYZTIRScansDirectory = save_directory + "XYZTIR/pcd/";
     auto unused = system((std::string("exec rm -r ") + pgScansDirectory).c_str());
@@ -916,7 +919,5 @@ int main(int argc, char **argv)
 
     pgTimeSaveStream.flush();
     pgTimeSaveStream.close();
-
-
 	return 0;
 }

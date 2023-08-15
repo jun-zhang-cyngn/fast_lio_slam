@@ -254,9 +254,7 @@ void Preprocess::oust64_handler(const sensor_msgs::PointCloud2::ConstPtr &msg)
       added_pt.intensity = data;
 
       uint16_t ring_id = (static_cast<uint32_t>(added_pt.intensity) & 0xFF000000) >> 24; 
-
       assert(ring_id == ring);
-
       added_pt.normal_x = 0;
       added_pt.normal_y = 0;
       added_pt.normal_z = 0;

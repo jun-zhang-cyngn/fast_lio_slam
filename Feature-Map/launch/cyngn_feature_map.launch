@@ -1,7 +1,8 @@
 <launch>
   <node pkg="clam_feature_map" type="clam_feature_map" name="clam_feature_map_gen" output="screen">
     <param name="file_path" type="string" value="/home/ubuntu/github/catkin_fastlio/data/2023-07-25-21-05-17_0814_surf/feat/"/>
-    <param name="downsample_size" type="double" value="0.1"/>
+    <param name="edge_map_res" type="double" value="0.2"/>
+    <param name="surf_map_res" type="double" value="0.2"/>
     <param name="pcd_name_fill_num" type="int" value="6"/> <!--set 5 for kitti07 and 0 for park-->
   </node>
 </launch>

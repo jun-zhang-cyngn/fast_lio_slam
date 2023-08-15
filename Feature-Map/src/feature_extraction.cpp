@@ -184,14 +184,22 @@ int main(int argc, char** argv)
   ros::NodeHandle nh;
 
   std::string file_path = "/home/ubuntu/github/catkin_fastlio/data/2023-07-25-21-05-17_0814_surf/feat/";
-  double downsample_size = 0.1;
+  double edge_map_res = 0.1;
+  double surf_map_res = 0.1;
+
   int pcd_name_fill_num = 6;;
 
   // nh.getParam("file_path", file_path);
-  // nh.getParam("downsample_size", downsample_size);
+  nh.getParam("edge_map_res", edge_map_res);
+  nh.getParam("surf_map_res", surf_map_res);
+  
   // nh.getParam("pcd_name_fill_num", pcd_name_fill_num);
   
-  std::cout << "file path " << file_path << "\n";
+  std::cout << "file_path        :" << file_path << "\n";
+  std::cout << "surf_map_res     : " << surf_map_res << "\n";
+  std::cout << "edge_map_res     : " << edge_map_res << "\n";
+  std::cout << "pcd_name_fill_num: " << pcd_name_fill_num << "\n";
+  
   std::vector<mypcl::pose> pose_vec;
   std::cout << "reading pose file.." << file_path << std::endl;
   pose_vec = mypcl::read_pose(file_path + "/pose.json");
