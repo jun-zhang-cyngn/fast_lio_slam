@@ -42,15 +42,15 @@ catkin_package(
   INCLUDE_DIRS include
 )
 
-add_executable(cyngn_feature_map 
+add_executable(clam_feature_map 
   src/feature_extraction.cpp
   src/common.cpp
 )
 
-target_compile_options(cyngn_feature_map 
+target_compile_options(clam_feature_map 
   PRIVATE ${OpenMP_CXX_FLAGS}
 )
-target_link_libraries(cyngn_feature_map 
+target_link_libraries(clam_feature_map 
   ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${CERES_LIBRARIES}
   ${OpenMP_CXX_FLAGS}
 )

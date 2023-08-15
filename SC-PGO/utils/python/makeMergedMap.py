@@ -26,7 +26,7 @@ color_table_len = color_table.shape[0]
 # User only consider this block
 ##########################
 
-data_dir = "/home/ubuntu/github/catkin_fastlio/data/2023-07-25-21-05-17_0811/" # should end with / 
+data_dir = "/home/ubuntu/github/catkin_fastlio/data/2023-07-25-21-05-17_0814_surf/" # should end with / 
 node_skip = 1
 
 num_points_in_a_scan = 150000 # for reservation (save faster) // e.g., use 150000 for 128 ray lidars, 100000 for 64 ray lidars, 30000 for 16 ray lidars, if error occured, use the larger value.

@@ -10,6 +10,7 @@
 
 #include <math.h>
 #include <pcl/filters/filter_indices.h>
+#include <pcl/filters/voxel_grid.h>
 #include <ros/console.h>
 
 #include "params.h"
@@ -41,7 +42,13 @@ Status FeatureExtraction::ExtractFeatures(const pcl::PointCloud<PointXYZITR>::Pt
                std::to_string(static_cast<int>(lidar_id_)));
       continue;
     }
-    laser_cloud_scans[scan_id]->push_back(pcl::PointXYZI(pt.x, pt.y, pt.z, pt.intensity));
+
+    pcl::PointXYZI pt2;
+    pt2.x = pt.x;
+    pt2.y = pt.y;
+    pt2.z = pt.z;
+    pt2.intensity = pt.intensity;
+    laser_cloud_scans[scan_id]->push_back(pt2);
   }
 
   for (const auto &laser_cloud_scan : laser_cloud_scans) {
@@ -174,18 +181,20 @@ Status FeatureExtraction::ExtractFeaturesFromSector(const pcl::PointCloud<pcl::P
 int main(int argc, char** argv)
 {
   ros::init(argc, argv, "cyngn_feature_map");
-  ros::NodeHandle nh("~");
+  ros::NodeHandle nh;
 
-  std::string file_path;
-  double downsample_size;
-  int pcd_name_fill_num;
+  std::string file_path = "/home/ubuntu/github/catkin_fastlio/data/2023-07-25-21-05-17_0814_surf/feat/";
+  double downsample_size = 0.1;
+  int pcd_name_fill_num = 6;;
 
-  nh.getParam("file_path", file_path);
-  nh.getParam("downsample_size", downsample_size);
-  nh.getParam("pcd_name_fill_num", pcd_name_fill_num);
+  // nh.getParam("file_path", file_path);
+  // nh.getParam("downsample_size", downsample_size);
+  // nh.getParam("pcd_name_fill_num", pcd_name_fill_num);
   
+  std::cout << "file path " << file_path << "\n";
   std::vector<mypcl::pose> pose_vec;
-  pose_vec = mypcl::read_pose(file_path + "pose.json");
+  std::cout << "reading pose file.." << file_path << std::endl;
+  pose_vec = mypcl::read_pose(file_path + "/pose.json");
   size_t pose_size = pose_vec.size();
   std::cout<<"pose size "<< pose_size << std::endl;
 
@@ -235,7 +244,27 @@ int main(int argc, char** argv)
 
     fe->ExtractFeatures(pc_filtered, edge_features, surf_features);
   }
-  pcl::io::savePCDFileBinary(file_path + "/surf_map.pcd", *surf_features); // scan 
-  pcl::io::savePCDFileBinary(file_path + "/edge_map.pcd", *edge_features); // scan 
+
+  pcl::VoxelGrid<pcl::PointXYZI> surf_down_sample_filter_;
+  pcl::VoxelGrid<pcl::PointXYZI> edge_down_sample_filter_;
+
+  surf_down_sample_filter_.setLeafSize(0.4, 0.4, 0.4);
+  surf_down_sample_filter_.setInputCloud(surf_features);
+  surf_down_sample_filter_.filter(*surf_features);
+  
+  edge_down_sample_filter_.setLeafSize(0.4, 0.4, 0.4);
+  edge_down_sample_filter_.setInputCloud(edge_features);
+  edge_down_sample_filter_.filter(*edge_features);
+
+  pcl::io::savePCDFileBinary(file_path + "/surf_map.pcd", *surf_features);  
+  pcl::io::savePCDFileBinary(file_path + "/edge_map.pcd", *edge_features); 
+
+  ros::Rate loop_rate(1);
+  while(ros::ok())
+  {
+    ros::spinOnce();
+    loop_rate.sleep();
+  }
+
   return 0;
 } 
