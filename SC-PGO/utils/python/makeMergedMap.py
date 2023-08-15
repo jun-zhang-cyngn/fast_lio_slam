@@ -26,7 +26,7 @@ color_table_len = color_table.shape[0]
 # User only consider this block
 ##########################
 
-data_dir = "/home/ubuntu/github/catkin_fastlio/data/2023-07-25-21-05-17_0814_surf/" # should end with / 
+data_dir = "/tmp/2023-07-25-21-05-17_0814_surf/" # should end with / 
 node_skip = 1
 
 num_points_in_a_scan = 150000 # for reservation (save faster) // e.g., use 150000 for 128 ray lidars, 100000 for 64 ray lidars, 30000 for 16 ray lidars, if error occured, use the larger value.
@@ -97,8 +97,6 @@ poses = load_fasfio_slam_pose(data_dir, 'optimized_poses.txt')
 covert_fastfio2_to_hba_poses(poses, data_dir + '/optimized_poses.json')
 poses = load_fasfio_slam_pose(data_dir, 'optimized_poses_gnc.txt')
 covert_fastfio2_to_hba_poses(poses, data_dir + '/optimized_poses_gnc.json')
-
-import pdb; pdb.set_trace()
 
 assert (scan_idx_range_to_stack[1] > scan_idx_range_to_stack[0])
 print("Merging scans from", scan_idx_range_to_stack[0], "to", scan_idx_range_to_stack[1])

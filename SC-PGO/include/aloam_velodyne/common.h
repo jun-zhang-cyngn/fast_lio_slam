@@ -65,12 +65,15 @@ pcl::PointXYZITR convert_pointxyzi(pcl::PointXYZI &pt) {
   pt2.x = pt.x;
   pt2.y = pt.y;
   pt2.z = pt.z;
-  uint32_t data = pt.intensity;
-  pt2.intensity = (data >> 16);
-  pt2.ring = (data & 0xFFFF);
+  uint16_t ring_id = (static_cast<uint32_t>(pt.intensity) & 0xFF000000) >> 24; 
+  pt2.intensity = (static_cast<uint32_t>(pt.intensity) & 0x00FFFFFF);
+  pt2.ring = ring_id;
   pt2.timestamp = 0;
-  // std::cout << "i = " << pt2.intensity << " ring = " << pt2.ring << "\n";
-
+  if(ring_id >= 128) {
+    std::cout << "error ring id is incorrect " << ring_id << "\n";
+    assert(ring_id < 128);
+  }
+  // also fix the intensity value of the original point
   pt.intensity = pt2.intensity;
   return pt2;
 }

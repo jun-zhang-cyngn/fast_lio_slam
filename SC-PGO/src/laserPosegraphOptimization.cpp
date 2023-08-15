@@ -149,7 +149,7 @@ ros::Publisher pubLoopScanLocal, pubLoopSubmapLocal;
 ros::Publisher pubOdomRepubVerifier;
 
 std::string save_directory;
-std::string pgKITTIformat, pgScansDirectory;
+std::string pgKITTIformat, pgScansDirectory, pgXYZTIRScansDirectory;
 std::string odomKITTIformat;
 std::string pgKITTIformatGnc;
 
@@ -514,7 +514,7 @@ std::optional<gtsam::Pose3> doICPVirtualRelative( int _loop_kf_idx, int _curr_kf
 
 void process_pg()
 {
-    while(exit_fastlio_slam == false)
+    while(!exit_fastlio_slam)
     {
 		while ( !odometryBuf.empty() && !fullResBuf.empty() )
         {
@@ -664,11 +664,9 @@ void process_pg()
 
             // save utility 
             std::string curr_node_idx_str = padZeros(curr_node_idx);
-            std::cout << pgScansDirectory + curr_node_idx_str + ".pcd" << "\n";
             pcl::PointCloud<pcl::PointXYZITR>::Ptr thisKeyFrame2(new pcl::PointCloud<pcl::PointXYZITR>());
             convert_pointxyzi_cloud(thisKeyFrame, thisKeyFrame2);
-
-            pcl::io::savePCDFileBinary(pgScansDirectory + "/XYZITR/" + curr_node_idx_str + ".pcd", *thisKeyFrame2); // scan 
+            pcl::io::savePCDFileBinary(pgXYZTIRScansDirectory + curr_node_idx_str + ".pcd", *thisKeyFrame2); // scan 
             pcl::io::savePCDFileBinary(pgScansDirectory + curr_node_idx_str + ".pcd", *thisKeyFrame); // scan 
             pgTimeSaveStream << timeLaser << std::endl; // path 
             pgTimeSaveStream.flush();
@@ -863,9 +861,12 @@ int main(int argc, char **argv)
     pgTimeSaveStream = std::fstream(save_directory + "times.txt", std::fstream::out); 
     pgTimeSaveStream.precision(std::numeric_limits<double>::max_digits10);
     pgScansDirectory = save_directory + "pcd/";
+    pgXYZTIRScansDirectory = save_directory + "XYZTIR/pcd/";
     auto unused = system((std::string("exec rm -r ") + pgScansDirectory).c_str());
     unused = system((std::string("mkdir -p ") + pgScansDirectory).c_str());
-    unused = system((std::string("mkdir -p ") + pgScansDirectory + "/XYZITR/").c_str());
+
+    unused = system((std::string("exec rm -r ") + pgXYZTIRScansDirectory).c_str());
+    unused = system((std::string("mkdir -p ") + pgXYZTIRScansDirectory).c_str());
 
 	nh.param<double>("keyframe_meter_gap", keyframeMeterGap, 2.0); // pose assignment every k m move 
 	nh.param<double>("keyframe_deg_gap", keyframeDegGap, 10.0); // pose assignment every k deg rot 
