@@ -277,14 +277,17 @@ void lasermap_fov_segment()
 void standard_pcl_cbk(const sensor_msgs::PointCloud2::ConstPtr &msg)
 {
     mtx_buffer.lock();
-    scan_count ++;
+    scan_count++;
     double preprocess_start_time = omp_get_wtime();
     if (msg->header.stamp.toSec() < last_timestamp_lidar)
     {
         ROS_ERROR("lidar loop back, clear buffer");
         lidar_buffer.clear();
     }
-
+    if(((scan_count % 20) == 0) && scan_count) {
+        std::cout << "Number of lidar scan back log:  " << lidar_buffer.size()
+                 << " total scan is: " << scan_count << "\n";
+    }
     PointCloudXYZI::Ptr  ptr(new PointCloudXYZI());
     p_pre->process(msg, ptr);
     lidar_buffer.push_back(ptr);

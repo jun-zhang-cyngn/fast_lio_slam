@@ -103,6 +103,7 @@ std::vector<pcl::PointCloud<PointType>::Ptr> keyframeLaserClouds;
 std::vector<Pose6D> keyframePoses;
 std::vector<Pose6D> keyframePosesUpdated;
 std::vector<double> keyframeTimes;
+std::vector<double> keyframeTimes2;
 int recentIdxUpdated = 0;
 
 gtsam::NonlinearFactorGraph gtSAMgraph;
@@ -152,6 +153,8 @@ std::string save_directory;
 std::string pgKITTIformat, pgScansDirectory, pgXYZTIRScansDirectory;
 std::string odomKITTIformat;
 std::string pgKITTIformatGnc;
+std::string keyframeTimestamps;
+std::string keyframeTimestamps2;
 
 std::fstream pgTimeSaveStream;
 
@@ -191,6 +194,20 @@ void saveOdometryVerticesKITTIformat(std::string _filename)
                << col1.z() << " " << col2.z() << " " << col3.z() << " " << t.z() << std::endl;
     }
 }
+
+void saveKeyframeTimestamps(std::string filename1, std::string filename2)
+{
+    // ref from gtsam's original code "dataset.cpp"
+    std::fstream stream1(filename1.c_str(), std::fstream::out);
+    for(const auto& time_sec: keyframeTimes) {
+        stream1 << std::fixed << time_sec << std::endl;
+    }
+    std::fstream stream2(filename2.c_str(), std::fstream::out);
+    for(const auto& time_sec: keyframeTimes2) {
+        stream2 << std::fixed << time_sec << std::endl;
+    }
+}
+
 
 void saveOptimizedVerticesKITTIformat(gtsam::Values _estimates, std::string _filename)
 {
@@ -491,7 +508,7 @@ std::optional<gtsam::Pose3> doICPVirtualRelative( int _loop_kf_idx, int _curr_kf
     pcl::PointCloud<PointType>::Ptr unused_result(new pcl::PointCloud<PointType>());
     icp.align(*unused_result);
  
-    float loopFitnessScoreThreshold = 0.2; // user parameter but fixed low value is safe. 
+    float loopFitnessScoreThreshold = 0.1; // user parameter but fixed low value is safe. 
     if (icp.hasConverged() == false || icp.getFitnessScore() > loopFitnessScoreThreshold) {
         std::cout << "[SC loop] ICP fitness test failed (" << icp.getFitnessScore() << " > " 
                   << loopFitnessScoreThreshold << "). Reject this SC loop." 
@@ -600,6 +617,7 @@ void process_pg()
             keyframePoses.push_back(pose_curr);
             keyframePosesUpdated.push_back(pose_curr); // init
             keyframeTimes.push_back(timeLaserOdometry);
+            keyframeTimes2.push_back(timeLaser);
 
             scManager.makeAndSaveScancontextAndKeys(*thisKeyFrameDS);
 
@@ -785,6 +803,7 @@ void process_gnc(void) {
     cout << "gnc delay is " << gnc_delay_ms / 1000 << " seconds \n";
     cout << "GNC done, saving results...\n";
     saveOptimizedVerticesKITTIformat(gnc_results, pgKITTIformatGnc);
+    saveKeyframeTimestamps(keyframeTimestamps, keyframeTimestamps2);
 };
 
 void process_isam(void)
@@ -807,6 +826,7 @@ void process_isam(void)
 
             saveOptimizedVerticesKITTIformat(isamCurrentEstimate, pgKITTIformat); // pose
             saveOdometryVerticesKITTIformat(odomKITTIformat); // pose
+            saveKeyframeTimestamps(keyframeTimestamps, keyframeTimestamps2);
         }
     }
 }
@@ -859,8 +879,9 @@ int main(int argc, char **argv)
     pgKITTIformat = save_directory + "optimized_poses.txt";
     pgKITTIformatGnc = save_directory + "optimized_poses_gnc.txt";
     odomKITTIformat = save_directory + "odom_poses.txt";
-
-    pgTimeSaveStream = std::fstream(save_directory + "times.txt", std::fstream::out); 
+    keyframeTimestamps = save_directory + "kf_times.txt";
+    keyframeTimestamps2 = save_directory + "kf_times2.txt";
+    pgTimeSaveStream = std::fstream(save_directory + "/times.txt", std::fstream::out); 
     pgTimeSaveStream.precision(std::numeric_limits<double>::max_digits10);
 
     pgScansDirectory = save_directory + "pcd/";
@@ -887,7 +908,7 @@ int main(int argc, char **argv)
     scManager.setSCdistThres(scDistThres);
     scManager.setMaximumRadius(scMaximumRadius);
 
-    float filter_size = 0.2; 
+    float filter_size = 0.4; 
     downSizeFilterScancontext.setLeafSize(filter_size, filter_size, filter_size);
     downSizeFilterICP.setLeafSize(filter_size, filter_size, filter_size);
 
@@ -912,8 +933,8 @@ int main(int argc, char **argv)
 	std::thread icp_calculation {process_icp}; // loop constraint calculation via icp 
 	std::thread isam_update {process_isam}; // if you want to call less isam2 run (for saving redundant computations and no real-time visulization is required), uncommment this and comment all the above runisam2opt when node is added. 
 
-	std::thread viz_map {process_viz_map}; // visualization - map (low frequency because it is heavy)
-	std::thread viz_path {process_viz_path}; // visualization - path (high frequency)
+	// std::thread viz_map {process_viz_map}; // visualization - map (low frequency because it is heavy)
+	// std::thread viz_path {process_viz_path}; // visualization - path (high frequency)
 
  	ros::spin();
 
