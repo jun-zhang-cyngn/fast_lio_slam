@@ -191,7 +191,6 @@ int main(int argc, char** argv)
   // nh.getParam("file_path", file_path);
   // nh.getParam("edge_map_res", edge_map_res);
   // nh.getParam("surf_map_res", surf_map_res);
-  
   // nh.getParam("pcd_name_fill_num", pcd_name_fill_num);
   
   std::cout << "file_path        :" << file_path << "\n";

@@ -284,10 +284,14 @@ void standard_pcl_cbk(const sensor_msgs::PointCloud2::ConstPtr &msg)
         ROS_ERROR("lidar loop back, clear buffer");
         lidar_buffer.clear();
     }
-    if(((scan_count % 20) == 0) && scan_count) {
-        std::cout << "Number of lidar scan back log:  " << lidar_buffer.size()
-                 << " total scan is: " << scan_count << "\n";
+    if(((scan_count % 100) == 0) && scan_count && lidar_buffer.size() > 0) {
+        std::cout << "fastlio backlog:  " << lidar_buffer.size()
+                 << " total scan: " << scan_count << "\n";
+        if(lidar_buffer.size()  > 100) {
+            ROS_WARN("the fastlio has too many backlogs, pause the rosbag play to allow the frontend to catch up (hit space on the terminal with rosbagplay)");
+        }
     }
+    
     PointCloudXYZI::Ptr  ptr(new PointCloudXYZI());
     p_pre->process(msg, ptr);
     lidar_buffer.push_back(ptr);

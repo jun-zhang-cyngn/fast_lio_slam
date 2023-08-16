@@ -70,6 +70,12 @@ using namespace gtsam;
 using std::cout;
 using std::endl;
 
+struct SCICPLoopClosureConstraint {
+    int from_node_id;
+    int to_node_id;
+    gtsam::Pose3 from_to_relative_pose;
+};
+
 double keyframeMeterGap;
 double keyframeDegGap, keyframeRadGap;
 double translationAccumulated = 1000000.0; // large value means must add the first given frame.
@@ -104,6 +110,8 @@ std::vector<Pose6D> keyframePoses;
 std::vector<Pose6D> keyframePosesUpdated;
 std::vector<double> keyframeTimes;
 std::vector<double> keyframeTimes2;
+std::vector<SCICPLoopClosureConstraint> loopClosureConstraints;
+
 int recentIdxUpdated = 0;
 
 gtsam::NonlinearFactorGraph gtSAMgraph;
@@ -177,6 +185,38 @@ gtsam::Pose3 Pose6DtoGTSAMPose3(const Pose6D& p)
     return gtsam::Pose3( gtsam::Rot3::RzRyRx(p.roll, p.pitch, p.yaw), gtsam::Point3(p.x, p.y, p.z) );
 } // Pose6DtoGTSAMPose3
 
+
+void saveKeyframeTimestamps(std::string filename1, std::string filename2)
+{
+    // ref from gtsam's original code "dataset.cpp"
+    std::fstream stream1(filename1.c_str(), std::fstream::out);
+    for(const auto& time_sec: keyframeTimes) {
+        stream1 << std::fixed << time_sec << std::endl;
+    }
+    std::fstream stream2(filename2.c_str(), std::fstream::out);
+    for(const auto& time_sec: keyframeTimes2) {
+        stream2 << std::fixed << time_sec << std::endl;
+    }
+}
+
+void saveOdometryVerticesJsonformat(std::string _filename)
+{
+    // ref from gtsam's original code "dataset.cpp"
+    std::fstream stream(_filename.c_str(), std::fstream::out);
+    for(const auto& _pose6d: keyframePoses) {
+        gtsam::Pose3 pose = Pose6DtoGTSAMPose3(_pose6d);
+        Point3 t = pose.translation();
+        Rot3 R = pose.rotation();
+        auto col1 = R.column(1); // Point3
+        auto col2 = R.column(2); // Point3
+        auto col3 = R.column(3); // Point3
+
+        stream << col1.x() << " " << col2.x() << " " << col3.x() << " " << t.x() << " "
+               << col1.y() << " " << col2.y() << " " << col3.y() << " " << t.y() << " "
+               << col1.z() << " " << col2.z() << " " << col3.z() << " " << t.z() << std::endl;
+    }
+}
+
 void saveOdometryVerticesKITTIformat(std::string _filename)
 {
     // ref from gtsam's original code "dataset.cpp"
@@ -195,19 +235,24 @@ void saveOdometryVerticesKITTIformat(std::string _filename)
     }
 }
 
-void saveKeyframeTimestamps(std::string filename1, std::string filename2)
-{
-    // ref from gtsam's original code "dataset.cpp"
-    std::fstream stream1(filename1.c_str(), std::fstream::out);
-    for(const auto& time_sec: keyframeTimes) {
-        stream1 << std::fixed << time_sec << std::endl;
-    }
-    std::fstream stream2(filename2.c_str(), std::fstream::out);
-    for(const auto& time_sec: keyframeTimes2) {
-        stream2 << std::fixed << time_sec << std::endl;
-    }
-}
+void saveLoopClosureConstraints(std::string filename) {
+    std::fstream fs(filename.c_str(), std::fstream::out);
+    for(auto &lcc : loopClosureConstraints) {
+    
+        fs << lcc.from_node_id << " " << lcc.to_node_id << " ";
+      
+        Point3 t = lcc.from_to_relative_pose.translation();
+        Rot3 R = lcc.from_to_relative_pose.rotation();
+        auto col1 = R.column(1); // Point3
+        auto col2 = R.column(2); // Point3
+        auto col3 = R.column(3); // Point3
 
+        fs << col1.x() << " " << col2.x() << " " << col3.x() << " " << t.x() << " "
+           << col1.y() << " " << col2.y() << " " << col3.y() << " " << t.y() << " "
+           << col1.z() << " " << col2.z() << " " << col3.z() << " " << t.z() << std::endl;
+
+    }
+};
 
 void saveOptimizedVerticesKITTIformat(gtsam::Values _estimates, std::string _filename)
 {
@@ -756,6 +801,8 @@ void process_icp(void)
             auto relative_pose_optional = doICPVirtualRelative(prev_node_idx, curr_node_idx);
             if(relative_pose_optional) {
                 gtsam::Pose3 relative_pose = relative_pose_optional.value();
+                loopClosureConstraints.push_back({prev_node_idx, curr_node_idx, relative_pose});
+
                 mtxPosegraph.lock();
                 gtSAMgraph.add(gtsam::BetweenFactor<gtsam::Pose3>(prev_node_idx, curr_node_idx, relative_pose, robustLoopNoise));
                 gnc_graph.add(gtsam::BetweenFactor<gtsam::Pose3>(prev_node_idx, curr_node_idx, relative_pose, nonrobustLoopNoise));
@@ -876,9 +923,9 @@ int main(int argc, char **argv)
 	ros::NodeHandle nh;
 
 	nh.param<std::string>("save_directory", save_directory, "/"); // pose assignment every k m move 
-    pgKITTIformat = save_directory + "optimized_poses.txt";
-    pgKITTIformatGnc = save_directory + "optimized_poses_gnc.txt";
-    odomKITTIformat = save_directory + "odom_poses.txt";
+    pgKITTIformat = save_directory + "isam2_optimized_poses.txt";
+    pgKITTIformatGnc = save_directory + "gnc_optimized_poses.txt";
+    odomKITTIformat = save_directory + "fastlio2_poses.txt";
     keyframeTimestamps = save_directory + "kf_times.txt";
     keyframeTimestamps2 = save_directory + "kf_times2.txt";
     pgTimeSaveStream = std::fstream(save_directory + "/times.txt", std::fstream::out); 

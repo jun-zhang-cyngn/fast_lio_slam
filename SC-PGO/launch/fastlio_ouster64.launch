@@ -31,7 +31,7 @@
 
     <!-- utils -->
     <!-- <param name="save_directory" type="string" value="/home/ubuntu/github/catkin_fastlio/data/2023-07-31-23-09-05_0816_surf_v3/"/>  CHANGE THIS and end with / -->
-    <param name="save_directory" type="string" value="/home/ubuntu/github/catkin_fastlio/data/2023-07-25-21-05-17_0816_surf_v4/"/>  
+    <!-- <param name="save_directory" type="string" value="/home/ubuntu/github/catkin_fastlio/data/2023-07-25-21-05-17_0816_surf_v4/"/>   -->
     <param name="save_directory" type="string" value="/home/ubuntu/github/catkin_fastlio/data/2023-07-25-21-05-17_0816_surf_v5/"/>  
     <!-- <param name="save_directory" type="string" value="/home/ubuntu/github/catkin_fastlio/data/2023-07-31-23-09-05_0816_surf_v4/"/>   -->
     <!-- <param name="save_directory" type="string" value="/home/ubuntu/github/catkin_fastlio/data/2023-07-25-21-05-17_0816_surf_v5/"/>   -->

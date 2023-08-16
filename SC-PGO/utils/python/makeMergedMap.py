@@ -49,13 +49,11 @@ def load_json_hba_json_pose(data_dir):
         if not line: break
         tx, ty, tz, qw, qx, qy, qz = [float(i) for i in line.split()]
         pose_SE3 = np.identity(4)
-        # import pdb; pdb.set_trace()
         pose_SE3[0:3,0:3] = R.from_quat([qx, qy, qz, qw]).as_matrix()
         pose_SE3[:, -1][0] = tx
         pose_SE3[:, -1][1] = ty
         pose_SE3[:, -1][2] = tz
         poses.append(pose_SE3)
-        # import pdb; pdb.set_trace()
     f.close()
     return poses
 
